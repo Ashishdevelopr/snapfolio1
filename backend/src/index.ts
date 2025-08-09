@@ -8,11 +8,10 @@ import { registerRoutes } from "./routes";
 import { connectMongo } from "./db/mongo";
 import { fileURLToPath } from 'url';
 
-// ESM-compatible __filename and __dirname
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// Simple logger function
+// Logger
 function log(message: string, source = "express") {
   const formattedTime = new Date().toLocaleTimeString("en-US", {
     hour: "numeric",
@@ -24,48 +23,40 @@ function log(message: string, source = "express") {
 }
 
 const app = express();
+const allowedOrigins = [
+  'http://localhost:5174',
+  'http://localhost:3000',
+  'http://localhost:5173',
+  'http://127.0.0.1:5174',
+  'http://127.0.0.1:5173',
+  'https://generated-assets1.vercel.app',
+  'https://snapfolio.live',
+  'https://www.snapfolio.live',
+];
 
-// Enable CORS for all routes
-app.use(cors({
+// ✅ 1. CORS Setup
+const corsOptions: cors.CorsOptions = {
   origin: (origin, callback) => {
-    // Allow requests with no origin (like mobile apps or curl requests)
-    if (!origin) return callback(null, true);
-    
-    const allowedOrigins = [
-      'http://localhost:5174',
-      'http://localhost:3000',
-      'http://localhost:5173',
-      'http://127.0.0.1:5174',
-      'http://127.0.0.1:5173',
-      'https://generated-assets1.vercel.app',
-      'https://snapfolio1.vercel.app/'
-    ];
-    
-    if (allowedOrigins.includes(origin) || !origin) {
+    if (!origin || allowedOrigins.includes(origin)) {
       callback(null, true);
     } else {
-      callback(new Error('Not allowed by CORS'));
+      callback(new Error("Not allowed by CORS"));
     }
-  },  
+  },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization'],
-  exposedHeaders: ['Content-Range', 'X-Content-Range']
-}));
+  exposedHeaders: ['Content-Range', 'X-Content-Range'],
+};
 
-// Handle preflight requests
-app.options('*', cors());
+app.use(cors(corsOptions));      // Apply CORS first
+app.options('*', cors(corsOptions)); // Handle preflight
 
+// ✅ 2. Body Parsers
 app.use(express.json({ limit: '5mb' }));
 app.use(express.urlencoded({ extended: false, limit: '5mb' }));
 
-// Register API routes
-app.use('/api', (req, res, next) => {
-  // This ensures that API routes are properly mounted
-  next();
-});
-
-// Request logging middleware
+// ✅ 3. Request Logger
 app.use((req, res, next) => {
   const start = Date.now();
   const path = req.path;
@@ -84,11 +75,9 @@ app.use((req, res, next) => {
       if (capturedJsonResponse) {
         logLine += ` :: ${JSON.stringify(capturedJsonResponse)}`;
       }
-
       if (logLine.length > 80) {
         logLine = logLine.slice(0, 79) + "…";
       }
-
       log(logLine);
     }
   });
@@ -96,26 +85,14 @@ app.use((req, res, next) => {
   next();
 });
 
-// Error handling middleware
-app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
-  const status = err.status || err.statusCode || 500;
-  const message = err.message || "Internal Server Error";
-
-  res.status(status).json({ message });
-  throw err;
-});
-
-// Initialize the application
+// ✅ 4. Routes Registration
 (async () => {
   try {
-    // Connect to MongoDB
     await connectMongo();
-    
-    // Register routes and get server instance
-    const server = await registerRoutes(app);
-    console.log('Routes registered successfully');
-    
-    // In production, serve static files from the frontend build
+    await registerRoutes(app); // should include all `/api` routes
+    log("Routes registered successfully");
+
+    // ✅ 5. Serve Static Frontend in Production
     if (process.env.NODE_ENV === 'production') {
       const frontendPath = path.join(__dirname, '../../frontend/dist');
       if (fs.existsSync(frontendPath)) {
@@ -129,17 +106,22 @@ app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
       }
     }
 
-    // Start server
+    // ✅ 6. Global Error Handler
+    app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
+      const status = err.status || err.statusCode || 500;
+      const message = err.message || "Internal Server Error";
+      res.status(status).json({ message });
+      log(`❌ ${status} ${message}`, 'error');
+    });
+
+    // ✅ 7. Start Server
+    const server = createServer(app);
     const port = 5000;
-    server.listen({
-      port,
-      host: "0.0.0.0",
-    }, () => {
+    server.listen({ port, host: "0.0.0.0" }, () => {
       log(`✅ Server running on port ${port}`);
-      console.log('Application initialized successfully');
     });
   } catch (err) {
-    console.error('Failed to initialize application:', err);
+    console.error("Failed to initialize application:", err);
     process.exit(1);
   }
 })();
