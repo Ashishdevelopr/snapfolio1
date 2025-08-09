@@ -37,7 +37,8 @@ app.use(cors({
       'http://localhost:5173',
       'http://127.0.0.1:5174',
       'http://127.0.0.1:5173',
-      'https://generated-assets1.vercel.app'
+      'https://generated-assets1.vercel.app',
+      'https://snapfolio1.vercel.app/'
     ];
     
     if (allowedOrigins.includes(origin) || !origin) {
